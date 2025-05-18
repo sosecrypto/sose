@@ -1,0 +1,20 @@
+# Python 바이트 코드 파일
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 환경 설정 및 API 키
+.env
+*.env
+
+# 가상환경
+venv/
+env/
+ENV/
+
+# Streamlit 생성 파일
+.streamlit/
+
+# 기타 시스템 파일
+.DS_Store
+Thumbs.db 
