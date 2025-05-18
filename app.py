@@ -1,7 +1,10 @@
 import streamlit as st
 import json
-from claude_analyzer import analyze_meeting_notes_with_claude
-from notion_connector import add_meeting_notes_to_notion
+import os
+
+# 전역 변수 초기화
+ANTHROPIC_AVAILABLE = False
+NOTION_AVAILABLE = False
 
 # 세션 상태 초기화
 if "analyzed_data" not in st.session_state:
@@ -17,6 +20,27 @@ st.set_page_config(
 # 앱 타이틀 및 설명
 st.title("📝 클로바 노트 → 노션 회의록 변환기")
 st.markdown("클로바 노트의 회의록 텍스트를 노션 회의록 템플릿에 자동으로 등록하는 서비스입니다.")
+
+# 모듈 가져오기 시도 (오류 처리 추가)
+try:
+    from claude_analyzer import analyze_meeting_notes_with_claude
+    ANTHROPIC_AVAILABLE = True
+except Exception as e:
+    st.error(f"Claude 모듈 로딩 중 오류 발생: {e}")
+    st.info("API 키 설정을 확인하거나 관리자에게 문의하세요.")
+
+try:
+    from notion_connector import add_meeting_notes_to_notion
+    NOTION_AVAILABLE = True
+except Exception as e:
+    st.error(f"Notion 모듈 로딩 중 오류 발생: {e}")
+    st.info("API 키 설정을 확인하거나 관리자에게 문의하세요.")
+
+# 환경 변수 확인
+api_status = {}
+for key in ["ANTHROPIC_API_KEY", "NOTION_API_KEY", "NOTION_DATABASE_ID"]:
+    # 보안을 위해 키 값 자체는 표시하지 않음
+    api_status[key] = "설정됨" if os.environ.get(key) else "설정되지 않음"
 
 # 사이드바 정보
 with st.sidebar:
@@ -40,6 +64,23 @@ with st.sidebar:
     - 회의 피드백
     - 다음 회의 일정
     """)
+    
+    # API 상태 표시 (디버깅용)
+    st.header("🔧 시스템 상태", help="시스템 구성 요소의 상태를 표시합니다")
+    st.markdown(f"**Claude API**: {'✅ 사용 가능' if ANTHROPIC_AVAILABLE else '❌ 사용 불가'}")
+    st.markdown(f"**Notion API**: {'✅ 사용 가능' if NOTION_AVAILABLE else '❌ 사용 불가'}")
+    
+    # 환경 변수 상태 표시
+    st.expander("API 키 상태", expanded=False).markdown(
+        f"""
+        - ANTHROPIC_API_KEY: {api_status['ANTHROPIC_API_KEY']}
+        - NOTION_API_KEY: {api_status['NOTION_API_KEY']}
+        - NOTION_DATABASE_ID: {api_status['NOTION_DATABASE_ID']}
+        """
+    )
+
+# 기능 사용 가능 여부 확인
+service_available = ANTHROPIC_AVAILABLE and NOTION_AVAILABLE
 
 # 메인 컨텐츠 영역
 col1, col2 = st.columns([3, 2])
@@ -62,40 +103,53 @@ with col1:
     )
     
     # 분석 및 등록 버튼
-    if st.button("회의록 분석 및 노션에 등록", type="primary", use_container_width=True):
+    button_disabled = not service_available
+    
+    if button_disabled:
+        st.warning("서비스 구성 요소가 올바르게 로드되지 않아 회의록 분석 기능을 사용할 수 없습니다.")
+    
+    if st.button("회의록 분석 및 노션에 등록", type="primary", use_container_width=True, disabled=button_disabled):
         if not meeting_text.strip():
             st.error("회의록 텍스트를 입력해주세요.")
         else:
             with st.spinner("회의록 분석 중..."):
-                # 1. Claude로 회의록 분석
-                analysis_result = analyze_meeting_notes_with_claude(meeting_text)
-                
-                if not analysis_result:
-                    st.error("회의록 분석에 실패했습니다.")
-                else:
-                    try:
-                        # 2. JSON 분석 결과 파싱
-                        meeting_data = json.loads(analysis_result)
-                        st.success("회의록 분석 완료!")
-                        
-                        # 세션 상태에 분석 결과 저장
-                        st.session_state.analyzed_data = meeting_data
-                        
-                        # 3. Notion에 회의록 등록
-                        with st.spinner("노션에 회의록 등록 중..."):
-                            page_id = add_meeting_notes_to_notion(meeting_data)
+                try:
+                    # 1. Claude로 회의록 분석
+                    analysis_result = analyze_meeting_notes_with_claude(meeting_text)
+                    
+                    if not analysis_result:
+                        st.error("회의록 분석에 실패했습니다.")
+                    else:
+                        try:
+                            # 2. JSON 분석 결과 파싱
+                            meeting_data = json.loads(analysis_result)
+                            st.success("회의록 분석 완료!")
                             
-                            if page_id:
-                                notion_url = f"https://notion.so/{page_id.replace('-', '')}"
-                                st.success(f"노션에 회의록이 성공적으로 등록되었습니다!")
-                                st.markdown(f"[노션에서 회의록 보기]({notion_url})")
-                            else:
-                                st.error("노션 회의록 등록에 실패했습니다.")
-                                
-                    except json.JSONDecodeError as e:
-                        st.error(f"분석 결과를 JSON으로 파싱하는 중 오류 발생: {e}")
-                        st.text("원본 응답:")
-                        st.code(analysis_result)
+                            # 세션 상태에 분석 결과 저장
+                            st.session_state.analyzed_data = meeting_data
+                            
+                            # 3. Notion에 회의록 등록
+                            with st.spinner("노션에 회의록 등록 중..."):
+                                try:
+                                    page_id = add_meeting_notes_to_notion(meeting_data)
+                                    
+                                    if page_id:
+                                        notion_url = f"https://notion.so/{page_id.replace('-', '')}"
+                                        st.success(f"노션에 회의록이 성공적으로 등록되었습니다!")
+                                        st.markdown(f"[노션에서 회의록 보기]({notion_url})")
+                                    else:
+                                        st.error("노션 회의록 등록에 실패했습니다.")
+                                except Exception as e:
+                                    st.error(f"노션 등록 중 오류 발생: {e}")
+                                    st.info("JSON 분석 결과:")
+                                    st.json(meeting_data)
+                                    
+                        except json.JSONDecodeError as e:
+                            st.error(f"분석 결과를 JSON으로 파싱하는 중 오류 발생: {e}")
+                            st.text("원본 응답:")
+                            st.code(analysis_result)
+                except Exception as e:
+                    st.error(f"회의록 분석 중 예상치 못한 오류 발생: {e}")
 
 with col2:
     st.header("분석 결과")
@@ -151,7 +205,8 @@ with col2:
         else:
             st.markdown("후속 액션 정보 없음")
 
-# 앱 실행 방법 안내
-st.markdown("---")
-st.markdown("### 앱 실행 방법")
-st.code("streamlit run app.py") 
+# 앱 실행 방법 안내 (로컬 실행 시에만 표시)
+if os.environ.get("STREAMLIT_DEPLOYMENT") != "cloud":
+    st.markdown("---")
+    st.markdown("### 앱 실행 방법")
+    st.code("streamlit run app.py") 
