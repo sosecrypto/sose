@@ -1,9 +1,13 @@
 import anthropic
 import os
-from dotenv import load_dotenv
 
-# .env 파일 로드
-load_dotenv()
+# .env 파일이 있는 경우에만 로드 시도
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv 패키지가 설치되지 않았을 경우 무시
+    pass
 
 # Anthropic API 키 가져오기
 API_KEY = os.environ.get("ANTHROPIC_API_KEY")

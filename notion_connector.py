@@ -1,10 +1,14 @@
 import json
 import os
 from notion_client import Client
-from dotenv import load_dotenv
 
-# .env 파일 로드
-load_dotenv()
+# .env 파일이 있는 경우에만 로드 시도
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv 패키지가 설치되지 않았을 경우 무시
+    pass
 
 # Notion API 키 설정
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
